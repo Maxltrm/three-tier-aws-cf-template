@@ -1,0 +1,260 @@
+AWSTemplateFormatVersion: '2010-09-09'
+Metadata:
+  License: Apache-2.0
+Description: 'AWS CloudFormation Template:
+    Create a VPC
+    Create two availability zones
+    Create two public subnet
+    Create four private subnet
+    Create an internet gateway
+    Create a NAT gateway to provide internet connection for the EC2 instance in private subnet
+    Create a Loadbalancer
+    Create security group'
+
+Parameters:
+
+  VpcCidrBlock:
+    Description: The VPC CIDR Block
+    Type: String
+    Default: 10.0.0.0/16
+    MinLength: 9
+    MaxLength: 18
+    AllowedPattern: (\d{1,3})\.(\d{1,3})\.(\d{1,3})\.(\d{1,3})/(\d{1,2})
+    ConstraintDescription: must be a valid IP CIDR
+  VpcTenancy:
+    Description: The allowed tenancy default or dedicated
+    Type: String
+    Default: default
+    AllowedValues: [default, dedicated]
+
+  ProjectName:
+    Description: Define Project name used as tag
+    Type: String
+    Default: myProject
+
+  ProjectOwner:
+    Description: Define Owner used as tag
+    Type: String
+    Default: MegaGalacticManager
+
+  KeyName:
+    Description: EC2 KeyPair to access to the instances
+    Type: AWS::EC2::KeyPair::KeyName
+
+  InstanceType:
+    Description: WebServer EC2 type
+    Type: String
+    Default: t2.nano
+    AllowedValues: [t2.nano, t2.micro, t2.small, t2.medium, t2.large]
+
+  LatestAmiId:
+    Type:  'AWS::SSM::Parameter::Value<AWS::EC2::Image::Id>'
+    Default: '/aws/service/ami-amazon-linux-latest/amzn2-ami-hvm-x86_64-gp2'
+
+  #### BASTION SECTION ####
+  
+  BastionSGCidr:
+    Description: Specify your public IP to access Bastion Host
+    Type: String
+    MinLength: 9
+    MaxLength: 18
+    AllowedPattern: (\d{1,3})\.(\d{1,3})\.(\d{1,3})\.(\d{1,3})/(\d{1,2})
+
+  #### FrontEnd SECTION ####
+
+Resources:
+
+  #### NETWORK SECTION ####
+
+  #### VPC Definition ####
+
+  myVPC:
+    Type: AWS::EC2::VPC
+    Properties:
+      CidrBlock: !Ref 'VpcCidrBlock'
+      EnableDnsHostnames: True
+      EnableDnsSupport: True
+      InstanceTenancy: !Ref 'VpcTenancy'
+
+  #### Internet GW ####
+
+  myInternetGateway:
+    Type: AWS::EC2::InternetGateway
+
+  #### Attach Internet GW to VPC ####
+
+  AttachGateway:
+    Type: AWS::EC2::VPCGatewayAttachment
+    Properties:
+      VpcId:
+        Ref: myVPC
+      InternetGatewayId:
+        Ref: myInternetGateway
+
+  #### Public Subnet to place NAT GW and Bastion Host ####
+
+  PublicSubnet1:
+    Type: AWS::EC2::Subnet
+    Properties:
+      AvailabilityZone: eu-west-1a
+      CidrBlock: 10.0.10.0/24
+      VpcId: !Ref myVPC
+      Tags:
+        - Key: Name
+          Value: PublicSubnet1
+
+  PublicSubnet2:
+    Type: AWS::EC2::Subnet
+    Properties:
+      AvailabilityZone: eu-west-1b
+      CidrBlock: 10.0.20.0/24
+      VpcId: !Ref myVPC
+      Tags:
+        - Key: Name
+          Value: PublicSubnet2
+
+  PublicSubnetRouteTable:
+    Type: AWS::EC2::RouteTable
+    Properties: 
+      VpcId: !Ref myVPC
+
+  PublicSubnet1RouteTableAssociation:
+    Type: AWS::EC2::SubnetRouteTableAssociation
+    Properties: 
+      RouteTableId: !Ref PublicSubnetRouteTable
+      SubnetId: !Ref PublicSubnet1
+
+  PublicSubnet2RouteTableAssociation:
+    Type: AWS::EC2::SubnetRouteTableAssociation
+    Properties: 
+      RouteTableId: !Ref PublicSubnetRouteTable
+      SubnetId: !Ref PublicSubnet2
+      
+  InternetGatewayRoute:
+    Type: AWS::EC2::Route
+    Properties: 
+      DestinationCidrBlock: 0.0.0.0/0
+      GatewayId:  !Ref myInternetGateway
+      RouteTableId: !Ref PublicSubnetRouteTable
+
+  #### Private Subnet to place FrontEnd and BackEnd ####
+
+  PrivateSubnet1:
+    Type: AWS::EC2::Subnet
+    Properties:
+      AvailabilityZone: eu-west-1a
+      CidrBlock: 10.0.30.0/24
+      VpcId: !Ref myVPC
+
+  PrivateSubnet2:
+    Type: AWS::EC2::Subnet
+    Properties:
+      AvailabilityZone: eu-west-1b
+      CidrBlock: 10.0.40.0/24
+      VpcId: !Ref myVPC
+
+  PrivateSubnet3:
+    Type: AWS::EC2::Subnet
+    Properties:
+      AvailabilityZone: eu-west-1a
+      CidrBlock: 10.0.50.0/24
+      VpcId: !Ref myVPC
+
+  PrivateSubnet4:
+    Type: AWS::EC2::Subnet
+    Properties:
+      AvailabilityZone: eu-west-1b
+      CidrBlock: 10.0.60.0/24
+      VpcId: !Ref myVPC
+
+  #### BASTION SECTION ####
+
+  ### Create Bastion SG ###
+
+  BastionSecurityGroup:
+    Type: AWS::EC2::SecurityGroup
+    Properties:
+      GroupDescription: Allow ssh and HTTP trafic
+      VpcId:
+        Ref: myVPC
+      SecurityGroupIngress:
+      - IpProtocol: tcp
+        FromPort: 80
+        ToPort: 80
+        CidrIp: !Ref 'BastionSGCidr'
+      - IpProtocol: tcp
+        FromPort: 22
+        ToPort: 22
+        CidrIp: !Ref 'BastionSGCidr'
+
+  EC2BastionHost: 
+    Type: AWS::EC2::Instance
+    Properties: 
+      ImageId: !Ref 'LatestAmiId'
+      KeyName: !Ref 'KeyName'
+      InstanceType: !Ref 'InstanceType'
+      NetworkInterfaces: 
+        - AssociatePublicIpAddress: "false"
+          DeviceIndex: "0"
+          GroupSet: 
+            - Ref: "BastionSecurityGroup"
+          SubnetId: 
+            Ref: "PublicSubnet1"
+      UserData: !Base64 |
+          #!/bin/bash
+          amazon-linux-extras install epel -y
+          yum install -y yum-utils device-mapper-persistent-data lvm2 ansible git python-devel python-pip vim-enhanced
+          pip install docker docker-compose
+          sleep 5
+          systemctl start docker
+          systemctl enable docker
+          cd /tmp
+          git clone https://github.com/ansible/awx.git
+          sleep 5
+          cd /tmp/awx
+          git clone https://github.com/ansible/awx-logos.git
+          sleep 5
+          ansible-playbook -i /tmp/awx/installer/inventory /tmp/awx/installer/install.yml
+          useradd -d /home/automation -s /bin/bash automation
+      Tags:
+        - Key: Name
+          Value: Bastion
+
+  EIPBastionHost:
+    Type: AWS::EC2::EIP
+    Properties: 
+      InstanceId: !Ref EC2BastionHost
+
+  #### FRONTEND SECTION ####
+
+  ManagementSecurityGroup:
+    Type: AWS::EC2::SecurityGroup
+    Properties:
+      GroupDescription: Allow ssh from bastion host
+      VpcId:
+        Ref: myVPC
+      SecurityGroupIngress:
+      - IpProtocol: tcp
+        FromPort: 22
+        ToPort: 22
+        SourceSecurityGroupId: !Ref 'BastionSecurityGroup'
+
+  FrontEndLaunchConfiguration:
+    Type: AWS::AutoScaling::LaunchConfiguration
+    Properties: 
+      ImageId: !Ref 'LatestAmiId'
+      KeyName: !Ref 'KeyName'
+      InstanceType: !Ref 'InstanceType'
+#     SecurityGroups: 
+
+  FrontEndASG:
+    Type: AWS::AutoScaling::AutoScalingGroup
+    Properties:
+      VPCZoneIdentifier: [ !Ref PrivateSubnet1, !Ref PrivateSubnet2]
+      LaunchConfigurationName: !Ref FrontEndLaunchConfiguration
+      MinSize: "2"
+      MaxSize: "4"
+      Tags:
+        - Key: Name
+          Value: FEInstances
+          PropagateAtLaunch: "true"
