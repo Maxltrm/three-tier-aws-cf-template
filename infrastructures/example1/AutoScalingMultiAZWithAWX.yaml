@@ -55,6 +55,7 @@ Parameters:
   
   BastionSGCidr:
     Description: Specify your public IP to access Bastion Host
+    Default: 0.0.0.0/0
     Type: String
     MinLength: 9
     MaxLength: 18
@@ -86,8 +87,7 @@ Resources:
   AttachGateway:
     Type: AWS::EC2::VPCGatewayAttachment
     Properties:
-      VpcId:
-        Ref: myVPC
+      VpcId: !Ref myVPC
       InternetGatewayId:
         Ref: myInternetGateway
 
@@ -225,14 +225,51 @@ Resources:
     Properties: 
       InstanceId: !Ref EC2BastionHost
 
+  #### LOADBALANCER SECTION ####
+
+  ### Target Group
+
+  myLoadBalancerSecurityGroup:
+    Type: AWS::EC2::SecurityGroup
+    Properties:
+      GroupDescription: Allow http connection
+      VpcId: !Ref myVPC
+      SecurityGroupIngress:
+      - IpProtocol: tcp
+        FromPort: 80
+        ToPort: 80
+        #SourceSecurityGroupId: !Ref 'BastionSecurityGroup'
+
+  myTargetGroup:
+    Type: AWS::ElasticLoadBalancingV2::TargetGroup
+    Properties:
+      HealthCheckEnabled: True
+      Name: feTargets
+      Port: 80
+      Protocol: TCP
+      TargetType: instance
+      VpcId: !Ref myVPC
+
+  ### Load Balancer
+
+  myLoadBalancer:
+    Type: AWS::ElasticLoadBalancingV2::LoadBalancer
+    Properties:
+      IpAddressType: ipv4
+      Name: myLoadBalancer
+      Scheme: internet-facing
+      #SecurityGroups: [ !Ref myLoadBalancerSecurityGroup ]
+      #SubnetMappings:
+      Subnets: [ !Ref PrivateSubnet1, !Ref PrivateSubnet2 ]
+      Type: network
+
   #### FRONTEND SECTION ####
 
   ManagementSecurityGroup:
     Type: AWS::EC2::SecurityGroup
     Properties:
       GroupDescription: Allow ssh from bastion host
-      VpcId:
-        Ref: myVPC
+      VpcId: !Ref myVPC
       SecurityGroupIngress:
       - IpProtocol: tcp
         FromPort: 22
@@ -254,32 +291,45 @@ Resources:
       LaunchConfigurationName: !Ref FrontEndLaunchConfiguration
       MinSize: "2"
       MaxSize: "4"
+      TargetGroupARNs: [ !Ref myTargetGroup ]
       Tags:
         - Key: Name
           Value: FEInstances
           PropagateAtLaunch: "true"
 
+  ### Listener
+
+  myListener:
+    Type: AWS::ElasticLoadBalancingV2::Listener
+    Properties:
+      DefaultActions:
+        - Type: "forward"
+          TargetGroupArn: !Ref myTargetGroup
+      LoadBalancerArn: !Ref myLoadBalancer
+      Port: 80
+      Protocol: TCP
+
   #### DATABASE SECTION ####
-
-  myDBSubnetGroup:
-    Type: AWS::RDS::DBSubnetGroup
-    Properties: 
-      DBSubnetGroupDescription: String
-      DBSubnetGroupName: String
-      SubnetIds: [ !Ref PrivateSubnet3, !Ref PrivateSubnet4 ]
-
-  myDB:
-    Type: AWS::RDS::DBInstance
-    Properties: 
-      AllocatedStorage: 10
-      AllowMajorVersionUpgrade: False
-      BackupRetentionPeriod: 7
-      CopyTagsToSnapshot: True
-      DBInstanceClass: db.t2.micro
-      DBName: demo
-      DBSubnetGroupName: !Ref 'myDBSubnetGroup'
-      DeletionProtection: False
-      Engine: MySQL
-      MasterUsername: admin
-      MasterUserPassword: max12345
-      MultiAZ: True
+#
+#  myDBSubnetGroup:
+#    Type: AWS::RDS::DBSubnetGroup
+#    Properties: 
+#      DBSubnetGroupDescription: String
+#      DBSubnetGroupName: String
+#      SubnetIds: [ !Ref PrivateSubnet3, !Ref PrivateSubnet4 ]
+#
+#  myDB:
+#    Type: AWS::RDS::DBInstance
+#    Properties: 
+#      AllocatedStorage: 10
+#      AllowMajorVersionUpgrade: False
+#      BackupRetentionPeriod: 7
+#      CopyTagsToSnapshot: True
+#      DBInstanceClass: db.t2.micro
+#      DBName: demo
+#      DBSubnetGroupName: !Ref 'myDBSubnetGroup'
+#      DeletionProtection: False
+#      Engine: MySQL
+#      MasterUsername: admin
+#      MasterUserPassword: max12345
+#      MultiAZ: True
