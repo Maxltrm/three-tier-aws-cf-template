@@ -203,7 +203,7 @@ Resources:
       UserData: !Base64 |
           #!/bin/bash
           amazon-linux-extras install epel -y
-          yum install -y yum-utils device-mapper-persistent-data lvm2 ansible git python-devel python-pip vim-enhanced
+          yum install -y yum-utils device-mapper-persistent-data lvm2 ansible git python-devel python-pip vim-enhanced docker
           pip install docker docker-compose
           sleep 5
           systemctl start docker
@@ -245,12 +245,12 @@ Resources:
       ImageId: !Ref 'LatestAmiId'
       KeyName: !Ref 'KeyName'
       InstanceType: !Ref 'InstanceType'
-#     SecurityGroups: 
+      SecurityGroups: [ !Ref 'ManagementSecurityGroup' ]
 
   FrontEndASG:
     Type: AWS::AutoScaling::AutoScalingGroup
     Properties:
-      VPCZoneIdentifier: [ !Ref PrivateSubnet1, !Ref PrivateSubnet2]
+      VPCZoneIdentifier: [ !Ref PrivateSubnet1, !Ref PrivateSubnet2 ]
       LaunchConfigurationName: !Ref FrontEndLaunchConfiguration
       MinSize: "2"
       MaxSize: "4"
@@ -258,3 +258,28 @@ Resources:
         - Key: Name
           Value: FEInstances
           PropagateAtLaunch: "true"
+
+  #### DATABASE SECTION ####
+
+  myDBSubnetGroup:
+    Type: AWS::RDS::DBSubnetGroup
+    Properties: 
+      DBSubnetGroupDescription: String
+      DBSubnetGroupName: String
+      SubnetIds: [ !Ref PrivateSubnet3, !Ref PrivateSubnet4 ]
+
+  myDB:
+    Type: AWS::RDS::DBInstance
+    Properties: 
+      AllocatedStorage: 10
+      AllowMajorVersionUpgrade: False
+      BackupRetentionPeriod: 7
+      CopyTagsToSnapshot: True
+      DBInstanceClass: db.t2.micro
+      DBName: demo
+      DBSubnetGroupName: !Ref 'myDBSubnetGroup'
+      DeletionProtection: False
+      Engine: MySQL
+      MasterUsername: admin
+      MasterUserPassword: max12345
+      MultiAZ: True
