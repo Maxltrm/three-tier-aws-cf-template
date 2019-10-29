@@ -91,8 +91,8 @@ Resources:
       InternetGatewayId:
         Ref: myInternetGateway
 
-  #### Public Subnet to place NAT GW and Bastion Host ####
-
+  #### Subnet[1-2] and route table creation
+  
   PublicSubnet1:
     Type: AWS::EC2::Subnet
     Properties:
@@ -117,10 +117,13 @@ Resources:
     Type: AWS::EC2::RouteTable
     Properties: 
       VpcId: !Ref myVPC
+      Tags:
+        - Key: Name
+          Value: PublicSubnetRouteTable
 
   PublicSubnet1RouteTableAssociation:
     Type: AWS::EC2::SubnetRouteTableAssociation
-    Properties: 
+    Properties:
       RouteTableId: !Ref PublicSubnetRouteTable
       SubnetId: !Ref PublicSubnet1
 
@@ -129,13 +132,55 @@ Resources:
     Properties: 
       RouteTableId: !Ref PublicSubnetRouteTable
       SubnetId: !Ref PublicSubnet2
-      
+
   InternetGatewayRoute:
     Type: AWS::EC2::Route
-    Properties: 
+    Properties:
       DestinationCidrBlock: 0.0.0.0/0
       GatewayId:  !Ref myInternetGateway
       RouteTableId: !Ref PublicSubnetRouteTable
+      
+  NATGatewayRouteTable:
+    Type: AWS::EC2::RouteTable
+    Properties:
+      VpcId: !Ref myVPC
+      Tags:
+        - Key: Name
+          Value: NATGatewayRouteTable
+
+  PrivateSubnet1RouteTableAssociation:
+    Type: AWS::EC2::SubnetRouteTableAssociation
+    Properties:
+      RouteTableId: !Ref NATGatewayRouteTable
+      SubnetId: !Ref PrivateSubnet1
+
+  PrivateSubnet2RouteTableAssociation:
+    Type: AWS::EC2::SubnetRouteTableAssociation
+    Properties:
+      RouteTableId: !Ref NATGatewayRouteTable
+      SubnetId: !Ref PrivateSubnet2
+
+  #### NAT Gateway and EIP Creation #### 
+  
+  NATGatewayEIP:
+     Type: AWS::EC2::EIP
+     Properties:
+       Domain: vpc
+
+  NATGateway:
+     Type: AWS::EC2::NatGateway
+     Properties:
+        AllocationId: !GetAtt 'NATGatewayEIP.AllocationId'
+        SubnetId: !Ref PublicSubnet1
+
+  #### NAT Gateway route #### 
+
+  NATGatewayRoute:
+    Type: AWS::EC2::Route
+    Properties:
+      DestinationCidrBlock: 0.0.0.0/0
+      NatGatewayId:  !Ref NATGateway
+      RouteTableId: !Ref NATGatewayRouteTable
 
   #### Private Subnet to place FrontEnd and BackEnd ####
 
@@ -145,6 +190,9 @@ Resources:
       AvailabilityZone: eu-west-1a
       CidrBlock: 10.0.30.0/24
       VpcId: !Ref myVPC
+      Tags:
+        - Key: Name
+          Value: PrivateSubnet1
 
   PrivateSubnet2:
     Type: AWS::EC2::Subnet
@@ -152,6 +200,9 @@ Resources:
       AvailabilityZone: eu-west-1b
       CidrBlock: 10.0.40.0/24
       VpcId: !Ref myVPC
+      Tags:
+        - Key: Name
+          Value: PrivateSubnet2
 
   PrivateSubnet3:
     Type: AWS::EC2::Subnet
@@ -159,6 +210,9 @@ Resources:
       AvailabilityZone: eu-west-1a
       CidrBlock: 10.0.50.0/24
       VpcId: !Ref myVPC
+      Tags:
+        - Key: Name
+          Value: PrivateSubnet3
 
   PrivateSubnet4:
     Type: AWS::EC2::Subnet
@@ -166,6 +220,9 @@ Resources:
       AvailabilityZone: eu-west-1b
       CidrBlock: 10.0.60.0/24
       VpcId: !Ref myVPC
+      Tags:
+        - Key: Name
+          Value: PrivateSubnet4
 
   #### BASTION SECTION ####
 
@@ -186,6 +243,9 @@ Resources:
         FromPort: 22
         ToPort: 22
         CidrIp: !Ref 'BastionSGCidr'
+      Tags:
+        - Key: Name
+          Value: bastion-sg
 
   EC2BastionHost: 
     Type: AWS::EC2::Instance
@@ -199,23 +259,23 @@ Resources:
           GroupSet: 
             - Ref: "BastionSecurityGroup"
           SubnetId: 
-            Ref: "PublicSubnet1"
-      UserData: !Base64 |
-          #!/bin/bash
-          amazon-linux-extras install epel -y
-          yum install -y yum-utils device-mapper-persistent-data lvm2 ansible git python-devel python-pip vim-enhanced docker
-          pip install docker docker-compose
-          sleep 5
-          systemctl start docker
-          systemctl enable docker
-          cd /tmp
-          git clone https://github.com/ansible/awx.git
-          sleep 5
-          cd /tmp/awx
-          git clone https://github.com/ansible/awx-logos.git
-          sleep 5
-          ansible-playbook -i /tmp/awx/installer/inventory /tmp/awx/installer/install.yml
-          useradd -d /home/automation -s /bin/bash automation
+            Ref: "PublicSubnet2"
+      #UserData: !Base64 |
+      #    #!/bin/bash
+      #    amazon-linux-extras install epel -y
+      #    yum install -y yum-utils device-mapper-persistent-data lvm2 ansible git python-devel python-pip vim-enhanced docker
+      #    pip install docker docker-compose
+      #    sleep 5
+      #    systemctl start docker
+      #    systemctl enable docker
+      #    cd /tmp
+      #    git clone https://github.com/ansible/awx.git
+      #    sleep 5
+      #    cd /tmp/awx
+      #    git clone https://github.com/ansible/awx-logos.git
+      #    sleep 5
+      #    ansible-playbook -i /tmp/awx/installer/inventory /tmp/awx/installer/install.yml
+      #    useradd -d /home/automation -s /bin/bash automation
       Tags:
         - Key: Name
           Value: Bastion
@@ -229,7 +289,7 @@ Resources:
 
   ### Target Group
 
-  myLoadBalancerSecurityGroup:
+  myLoadBalancerSG:
     Type: AWS::EC2::SecurityGroup
     Properties:
       GroupDescription: Allow http connection
@@ -239,6 +299,9 @@ Resources:
         FromPort: 80
         ToPort: 80
         #SourceSecurityGroupId: !Ref 'BastionSecurityGroup'
+      Tags:
+        - Key: Name
+          Value: lb-sg
 
   myTargetGroup:
     Type: AWS::ElasticLoadBalancingV2::TargetGroup
@@ -258,14 +321,14 @@ Resources:
       IpAddressType: ipv4
       Name: myLoadBalancer
       Scheme: internet-facing
-      #SecurityGroups: [ !Ref myLoadBalancerSecurityGroup ]
+      #SecurityGroups: [ !Ref myLoadBalancerSG ]
       #SubnetMappings:
       Subnets: [ !Ref PrivateSubnet1, !Ref PrivateSubnet2 ]
       Type: network
 
   #### FRONTEND SECTION ####
 
-  ManagementSecurityGroup:
+  ManagementSG:
     Type: AWS::EC2::SecurityGroup
     Properties:
       GroupDescription: Allow ssh from bastion host
@@ -275,6 +338,22 @@ Resources:
         FromPort: 22
         ToPort: 22
         SourceSecurityGroupId: !Ref 'BastionSecurityGroup'
+      Tags:
+        - Key: Name
+          Value: mgmt-sg
+
+  WebSG:
+    Type: AWS::EC2::SecurityGroup
+    Properties:
+      GroupDescription: Allow ssh from bastion host
+      VpcId: !Ref myVPC
+      SecurityGroupIngress:
+      - IpProtocol: tcp
+        FromPort: 80
+        ToPort: 80
+      Tags:
+        - Key: Name
+          Value: web-sg
 
   FrontEndLaunchConfiguration:
     Type: AWS::AutoScaling::LaunchConfiguration
@@ -282,7 +361,7 @@ Resources:
       ImageId: !Ref 'LatestAmiId'
       KeyName: !Ref 'KeyName'
       InstanceType: !Ref 'InstanceType'
-      SecurityGroups: [ !Ref 'ManagementSecurityGroup' ]
+      SecurityGroups: [ !Ref 'ManagementSG', !Ref 'WebSG' ]
 
   FrontEndASG:
     Type: AWS::AutoScaling::AutoScalingGroup
@@ -310,26 +389,52 @@ Resources:
       Protocol: TCP
 
   #### DATABASE SECTION ####
-#
-#  myDBSubnetGroup:
-#    Type: AWS::RDS::DBSubnetGroup
-#    Properties: 
-#      DBSubnetGroupDescription: String
-#      DBSubnetGroupName: String
-#      SubnetIds: [ !Ref PrivateSubnet3, !Ref PrivateSubnet4 ]
-#
-#  myDB:
-#    Type: AWS::RDS::DBInstance
-#    Properties: 
-#      AllocatedStorage: 10
-#      AllowMajorVersionUpgrade: False
-#      BackupRetentionPeriod: 7
-#      CopyTagsToSnapshot: True
-#      DBInstanceClass: db.t2.micro
-#      DBName: demo
-#      DBSubnetGroupName: !Ref 'myDBSubnetGroup'
-#      DeletionProtection: False
-#      Engine: MySQL
-#      MasterUsername: admin
-#      MasterUserPassword: max12345
-#      MultiAZ: True
+
+#  DataBaseEC2SG:
+#    Type: AWS::EC2::SecurityGroup
+#    Properties:
+#      GroupDescription: Allow connection from web-sg to db
+#      VpcId: !Ref myVPC
+#      SecurityGroupIngress:
+#      - IpProtocol: tcp
+#        FromPort: 3306
+#        ToPort: 3306
+#        SourceSecurityGroupId: !Ref 'WebSG'
+#      Tags:
+#        - Key: Name
+#          Value: dbec2-sg
+
+  DataBaseSG:
+    Type: AWS::RDS::DBSecurityGroup
+    Properties:
+      EC2VpcId: !Ref myVPC
+      DBSecurityGroupIngress:
+        - EC2SecurityGroupId: !Ref 'WebSG'
+      GroupDescription: "Frontend Access"
+      Tags:
+        - Key: Name
+          Value: db-sg
+
+  DBSubnetGroup:
+    Type: AWS::RDS::DBSubnetGroup
+    Properties: 
+      DBSubnetGroupDescription: String
+      DBSubnetGroupName: String
+      SubnetIds: [ !Ref PrivateSubnet3, !Ref PrivateSubnet4 ]
+
+  DataBase:
+    Type: AWS::RDS::DBInstance
+    Properties: 
+      DBSecurityGroups: [ !Ref 'DataBaseSG' ]
+      AllocatedStorage: 10
+      AllowMajorVersionUpgrade: False
+      BackupRetentionPeriod: 7
+      CopyTagsToSnapshot: True
+      DBInstanceClass: db.t2.micro
+      DBName: demo
+      DBSubnetGroupName: !Ref 'DBSubnetGroup'
+      DeletionProtection: False
+      Engine: MySQL
+      MasterUsername: admin
+      MasterUserPassword: max12345
+      MultiAZ: True
