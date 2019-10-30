@@ -13,6 +13,21 @@ Description: 'AWS CloudFormation Template:
 
 Parameters:
 
+  AccessKeyId:
+    Description: Access key for the automation user
+    Type: String
+    NoEcho: true
+
+  SecretAccessKey:
+    Description: Secret key for the automation user
+    Type: String
+    NoEcho: true
+
+  DefaultRegion:
+    Description: Secret key for the automation user
+    Type: String
+    NoEcho: true
+
   VpcCidrBlock:
     Description: The VPC CIDR Block
     Type: String
@@ -97,6 +112,7 @@ Resources:
       AvailabilityZone: eu-west-1a
       CidrBlock: 10.0.10.0/24
       VpcId: !Ref myVPC
+      MapPublicIpOnLaunch: True
       Tags:
         - Key: Name
           Value: PublicSubnet1
@@ -107,6 +123,7 @@ Resources:
       AvailabilityZone: eu-west-1b
       CidrBlock: 10.0.20.0/24
       VpcId: !Ref myVPC
+      MapPublicIpOnLaunch: True
       Tags:
         - Key: Name
           Value: PublicSubnet2
@@ -226,17 +243,13 @@ Resources:
 
   ### Create Bastion SG ###
 
-  BastionSecurityGroup:
+  BastionSG:
     Type: AWS::EC2::SecurityGroup
     Properties:
       GroupDescription: Allow ssh and HTTP trafic
       VpcId:
         Ref: myVPC
       SecurityGroupIngress:
-      - IpProtocol: tcp
-        FromPort: 80
-        ToPort: 80
-        CidrIp: !Ref 'BastionSGCidr'
       - IpProtocol: tcp
         FromPort: 22
         ToPort: 22
@@ -245,43 +258,74 @@ Resources:
         - Key: Name
           Value: bastion-sg
 
-  EC2BastionHost: 
-    Type: AWS::EC2::Instance
-    Properties: 
+#  EC2BastionHost: 
+#    Type: AWS::EC2::Instance
+#    Properties: 
+#      ImageId: !Ref 'LatestAmiId'
+#      KeyName: !Ref 'KeyName'
+#      InstanceType: !Ref 'InstanceType'
+#      NetworkInterfaces: 
+#        - AssociatePublicIpAddress: "false"
+#          DeviceIndex: "0"
+#          GroupSet: 
+#            - Ref: "BastionSecurityGroup"
+#          SubnetId: 
+#            Ref: "PublicSubnet2"
+#      #UserData: !Base64 |
+#      #    #!/bin/bash
+#      #    amazon-linux-extras install epel -y
+#      #    yum install -y yum-utils device-mapper-persistent-data lvm2 ansible git python-devel python-pip vim-enhanced docker
+#      #    pip install docker docker-compose
+#      #    sleep 5
+#      #    systemctl start docker
+#      #    systemctl enable docker
+#      #    cd /tmp
+#      #    git clone https://github.com/ansible/awx.git
+#      #    sleep 5
+#      #    cd /tmp/awx
+#      #    git clone https://github.com/ansible/awx-logos.git
+#      #    sleep 5
+#      #    ansible-playbook -i /tmp/awx/installer/inventory /tmp/awx/installer/install.yml
+#      #    useradd -d /home/automation -s /bin/bash automation
+#      Tags:
+#        - Key: Name
+#          Value: Bastion
+
+  BastionLaunchConfiguration:
+    Type: AWS::AutoScaling::LaunchConfiguration
+    Properties:
       ImageId: !Ref 'LatestAmiId'
       KeyName: !Ref 'KeyName'
       InstanceType: !Ref 'InstanceType'
-      NetworkInterfaces: 
-        - AssociatePublicIpAddress: "false"
-          DeviceIndex: "0"
-          GroupSet: 
-            - Ref: "BastionSecurityGroup"
-          SubnetId: 
-            Ref: "PublicSubnet2"
-      #UserData: !Base64 |
-      #    #!/bin/bash
-      #    amazon-linux-extras install epel -y
-      #    yum install -y yum-utils device-mapper-persistent-data lvm2 ansible git python-devel python-pip vim-enhanced docker
-      #    pip install docker docker-compose
-      #    sleep 5
-      #    systemctl start docker
-      #    systemctl enable docker
-      #    cd /tmp
-      #    git clone https://github.com/ansible/awx.git
-      #    sleep 5
-      #    cd /tmp/awx
-      #    git clone https://github.com/ansible/awx-logos.git
-      #    sleep 5
-      #    ansible-playbook -i /tmp/awx/installer/inventory /tmp/awx/installer/install.yml
-      #    useradd -d /home/automation -s /bin/bash automation
+      SecurityGroups: [ !Ref 'BastionSG' ]
+      UserData: 
+        Fn::Base64:
+          !Sub |
+            #!/bin/bash
+            export AWS_ACCESS_KEY_ID=${AccessKeyId}
+            export AWS_SECRET_ACCESS_KEY=${SecretAccessKey}
+            export AWS_DEFAULT_REGION=${DefaultRegion}
+            EIP=$(aws ec2 describe-addresses --output text | awk '{ if ( $3 !~ /eipassoc-*/ ) print $4 }')
+            instance_id=$(curl -s http://169.254.169.254/latest/meta-data/instance-id)
+            aws ec2 associate-address --instance-id $instance_id --public-ip $EIP
+  BastionASG:
+    Type: AWS::AutoScaling::AutoScalingGroup
+    Properties:
+      VPCZoneIdentifier: [ !Ref PublicSubnet1, !Ref PublicSubnet2 ]
+      LaunchConfigurationName: !Ref BastionLaunchConfiguration
+      MinSize: "1"
+      MaxSize: "1"
       Tags:
         - Key: Name
-          Value: Bastion
+          Value: EC2BastionHost
+          PropagateAtLaunch: "true"
+    DependsOn: NATGateway
 
   EIPBastionHost:
     Type: AWS::EC2::EIP
     Properties: 
-      InstanceId: !Ref EC2BastionHost
+      Domain: vpc
+      #InstanceId: !Ref 'BastionASG'
 
   #### LOADBALANCER SECTION ####
 
@@ -319,7 +363,7 @@ Resources:
       - IpProtocol: tcp
         FromPort: 22
         ToPort: 22
-        SourceSecurityGroupId: !Ref 'BastionSecurityGroup'
+        SourceSecurityGroupId: !Ref 'BastionSG'
       Tags:
         - Key: Name
           Value: mgmt-sg
@@ -349,7 +393,6 @@ Resources:
       KeyName: !Ref 'KeyName'
       InstanceType: !Ref 'InstanceType'
       SecurityGroups: [ !Ref 'ManagementSG', !Ref 'WebSG' ]
-
   FrontEndASG:
     Type: AWS::AutoScaling::AutoScalingGroup
     Properties:
@@ -362,7 +405,6 @@ Resources:
         - Key: Name
           Value: FEInstances
           PropagateAtLaunch: "true"
-
   CPUPolicy:
     Type: AWS::AutoScaling::ScalingPolicy
     Properties:
