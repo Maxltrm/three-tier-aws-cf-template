@@ -61,8 +61,6 @@ Parameters:
     MaxLength: 18
     AllowedPattern: (\d{1,3})\.(\d{1,3})\.(\d{1,3})\.(\d{1,3})/(\d{1,2})
 
-  #### FrontEnd SECTION ####
-
 Resources:
 
   #### NETWORK SECTION ####
@@ -289,20 +287,6 @@ Resources:
 
   ### Target Group
 
-  myLoadBalancerSG:
-    Type: AWS::EC2::SecurityGroup
-    Properties:
-      GroupDescription: Allow http connection
-      VpcId: !Ref myVPC
-      SecurityGroupIngress:
-      - IpProtocol: tcp
-        FromPort: 80
-        ToPort: 80
-        #SourceSecurityGroupId: !Ref 'BastionSecurityGroup'
-      Tags:
-        - Key: Name
-          Value: lb-sg
-
   myTargetGroup:
     Type: AWS::ElasticLoadBalancingV2::TargetGroup
     Properties:
@@ -321,9 +305,7 @@ Resources:
       IpAddressType: ipv4
       Name: myLoadBalancer
       Scheme: internet-facing
-      #SecurityGroups: [ !Ref myLoadBalancerSG ]
-      #SubnetMappings:
-      Subnets: [ !Ref PrivateSubnet1, !Ref PrivateSubnet2 ]
+      Subnets: [ !Ref PublicSubnet1, !Ref PublicSubnet2 ]
       Type: network
 
   #### FRONTEND SECTION ####
@@ -351,6 +333,11 @@ Resources:
       - IpProtocol: tcp
         FromPort: 80
         ToPort: 80
+        CidrIp: 0.0.0.0/0
+      - IpProtocol: tcp
+        FromPort: 443
+        ToPort: 443
+        CidrIp: 0.0.0.0/0
       Tags:
         - Key: Name
           Value: web-sg
@@ -376,6 +363,16 @@ Resources:
           Value: FEInstances
           PropagateAtLaunch: "true"
 
+  CPUPolicy:
+    Type: AWS::AutoScaling::ScalingPolicy
+    Properties:
+      AutoScalingGroupName: !Ref FrontEndASG
+      PolicyType: TargetTrackingScaling
+      TargetTrackingConfiguration:
+        PredefinedMetricSpecification:
+          PredefinedMetricType: ASGAverageCPUUtilization
+        TargetValue: 30
+
   ### Listener
 
   myListener:
@@ -388,53 +385,39 @@ Resources:
       Port: 80
       Protocol: TCP
 
-  #### DATABASE SECTION ####
-
-#  DataBaseEC2SG:
-#    Type: AWS::EC2::SecurityGroup
+#  #### DATABASE SECTION ####
+#
+#  DataBaseSG:
+#    Type: AWS::RDS::DBSecurityGroup
 #    Properties:
-#      GroupDescription: Allow connection from web-sg to db
-#      VpcId: !Ref myVPC
-#      SecurityGroupIngress:
-#      - IpProtocol: tcp
-#        FromPort: 3306
-#        ToPort: 3306
-#        SourceSecurityGroupId: !Ref 'WebSG'
+#      EC2VpcId: !Ref myVPC
+#      DBSecurityGroupIngress:
+#        - EC2SecurityGroupId: !Ref 'WebSG'
+#      GroupDescription: "Frontend Access"
 #      Tags:
 #        - Key: Name
-#          Value: dbec2-sg
-
-  DataBaseSG:
-    Type: AWS::RDS::DBSecurityGroup
-    Properties:
-      EC2VpcId: !Ref myVPC
-      DBSecurityGroupIngress:
-        - EC2SecurityGroupId: !Ref 'WebSG'
-      GroupDescription: "Frontend Access"
-      Tags:
-        - Key: Name
-          Value: db-sg
-
-  DBSubnetGroup:
-    Type: AWS::RDS::DBSubnetGroup
-    Properties: 
-      DBSubnetGroupDescription: String
-      DBSubnetGroupName: String
-      SubnetIds: [ !Ref PrivateSubnet3, !Ref PrivateSubnet4 ]
-
-  DataBase:
-    Type: AWS::RDS::DBInstance
-    Properties: 
-      DBSecurityGroups: [ !Ref 'DataBaseSG' ]
-      AllocatedStorage: 10
-      AllowMajorVersionUpgrade: False
-      BackupRetentionPeriod: 7
-      CopyTagsToSnapshot: True
-      DBInstanceClass: db.t2.micro
-      DBName: demo
-      DBSubnetGroupName: !Ref 'DBSubnetGroup'
-      DeletionProtection: False
-      Engine: MySQL
-      MasterUsername: admin
-      MasterUserPassword: max12345
-      MultiAZ: True
+#          Value: db-sg
+#
+#  DBSubnetGroup:
+#    Type: AWS::RDS::DBSubnetGroup
+#    Properties: 
+#      DBSubnetGroupDescription: String
+#      DBSubnetGroupName: String
+#      SubnetIds: [ !Ref PrivateSubnet3, !Ref PrivateSubnet4 ]
+#
+#  DataBase:
+#    Type: AWS::RDS::DBInstance
+#    Properties: 
+#      DBSecurityGroups: [ !Ref 'DataBaseSG' ]
+#      AllocatedStorage: 10
+#      AllowMajorVersionUpgrade: False
+#      BackupRetentionPeriod: 7
+#      CopyTagsToSnapshot: True
+#      DBInstanceClass: db.t2.micro
+#      DBName: demo
+#      DBSubnetGroupName: !Ref 'DBSubnetGroup'
+#      DeletionProtection: False
+#      Engine: MySQL
+#      MasterUsername: admin
+#      MasterUserPassword: max12345
+#      MultiAZ: True
