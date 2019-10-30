@@ -1,6 +1,6 @@
 ## Three-tier infrastructure design
 
-![Alt text](example1.png?raw=true "Title")
+![Alt text](images/diagram.png?raw=true "Title")
 
 ### EC2 Instances initialization
 
