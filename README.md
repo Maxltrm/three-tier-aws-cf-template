@@ -1,11 +1,11 @@
-### Three-tier infrastructure design
+## Three-tier infrastructure design
 
 ![Alt text](example1.png?raw=true "Title")
 
-### Instance initialization
+### EC2 Instances initialization
 
 pull code from s3 or github or artifactory
 
-### Configuration Management
+### CI/CD and Configuration Management
 
 ansible/awx
