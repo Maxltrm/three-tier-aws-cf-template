@@ -2,14 +2,13 @@ AWSTemplateFormatVersion: '2010-09-09'
 Metadata:
   License: Apache-2.0
 Description: 'AWS CloudFormation Template:
-    Create a VPC
-    Create two availability zones
-    Create two public subnet
-    Create four private subnet
-    Create an internet gateway
-    Create a NAT gateway to provide internet connection for the EC2 instance in private subnet
-    Create a Loadbalancer
-    Create security group'
+    1 x VPC
+    2 x AZ
+    2 x Public Subnet
+    4 x Private Subnet
+    1 x Internet Gateway
+    1 x Nat Gateway
+    1 x Elastic Load Balancer'
 
 Parameters:
 
@@ -24,9 +23,8 @@ Parameters:
     NoEcho: true
 
   DefaultRegion:
-    Description: Secret key for the automation user
+    Default: eu-west-1
     Type: String
-    NoEcho: true
 
   VpcCidrBlock:
     Description: The VPC CIDR Block
@@ -36,21 +34,12 @@ Parameters:
     MaxLength: 18
     AllowedPattern: (\d{1,3})\.(\d{1,3})\.(\d{1,3})\.(\d{1,3})/(\d{1,2})
     ConstraintDescription: must be a valid IP CIDR
+
   VpcTenancy:
     Description: The allowed tenancy default or dedicated
     Type: String
     Default: default
     AllowedValues: [default, dedicated]
-
-  ProjectName:
-    Description: Define Project name used as tag
-    Type: String
-    Default: myProject
-
-  ProjectOwner:
-    Description: Define Owner used as tag
-    Type: String
-    Default: MegaGalacticManager
 
   KeyName:
     Description: EC2 KeyPair to access to the instances
@@ -76,6 +65,68 @@ Parameters:
     MaxLength: 18
     AllowedPattern: (\d{1,3})\.(\d{1,3})\.(\d{1,3})\.(\d{1,3})/(\d{1,2})
 
+  PublicSubnet1CIDR:
+    Default: 10.0.10.0/24
+    Type: String
+    MinLength: 9
+    MaxLength: 18
+    AllowedPattern: (\d{1,3})\.(\d{1,3})\.(\d{1,3})\.(\d{1,3})/(\d{1,2})
+
+  PublicSubnet2CIDR:
+    Default: 10.0.20.0/24
+    Type: String
+    MinLength: 9
+    MaxLength: 18
+    AllowedPattern: (\d{1,3})\.(\d{1,3})\.(\d{1,3})\.(\d{1,3})/(\d{1,2})
+
+  PrivateSubnet1CIDR:
+    Default: 10.0.30.0/24
+    Type: String
+    MinLength: 9
+    MaxLength: 18
+    AllowedPattern: (\d{1,3})\.(\d{1,3})\.(\d{1,3})\.(\d{1,3})/(\d{1,2})
+
+  PrivateSubnet2CIDR:
+    Default: 10.0.40.0/24
+    Type: String
+    MinLength: 9
+    MaxLength: 18
+    AllowedPattern: (\d{1,3})\.(\d{1,3})\.(\d{1,3})\.(\d{1,3})/(\d{1,2})
+
+  PrivateSubnet3CIDR:
+    Default: 10.0.50.0/24
+    Type: String
+    MinLength: 9
+    MaxLength: 18
+    AllowedPattern: (\d{1,3})\.(\d{1,3})\.(\d{1,3})\.(\d{1,3})/(\d{1,2})
+
+  PrivateSubnet4CIDR:
+    Default: 10.0.60.0/24
+    Type: String
+    MinLength: 9
+    MaxLength: 18
+    AllowedPattern: (\d{1,3})\.(\d{1,3})\.(\d{1,3})\.(\d{1,3})/(\d{1,2})
+
+  AvailabilityZoneA:
+    Default: eu-west-1a
+    Type: String
+    AllowedValues: [eu-west-1a, eu-west-1b, eu-west-1c]
+
+  AvailabilityZoneB:
+    Default: eu-west-1b
+    Type: String
+    AllowedValues: [eu-west-1a, eu-west-1b, eu-west-1c]
+
+Rules:
+  ValidateNotEqualAZ:
+    Assertions:
+      - AssertDescription: Availability zone can't be the same
+        Assert:
+          "Fn::Not":
+            - "Fn::Equals":
+               - !Ref AvailabilityZoneA
+               - !Ref AvailabilityZoneB
+
 Resources:
 
   #### NETWORK SECTION ####
@@ -92,7 +143,7 @@ Resources:
 
   #### Internet GW ####
 
-  myInternetGateway:
+  InternetGateway:
     Type: AWS::EC2::InternetGateway
 
   #### Attach Internet GW to VPC ####
@@ -102,15 +153,15 @@ Resources:
     Properties:
       VpcId: !Ref myVPC
       InternetGatewayId:
-        Ref: myInternetGateway
+        Ref: InternetGateway
 
-  #### Subnet[1-2] and route table creation
+  #### Public subnet and route table creation
   
   PublicSubnet1:
     Type: AWS::EC2::Subnet
     Properties:
-      AvailabilityZone: eu-west-1a
-      CidrBlock: 10.0.10.0/24
+      AvailabilityZone: !Ref AvailabilityZoneA
+      CidrBlock: !Ref PublicSubnet1CIDR
       VpcId: !Ref myVPC
       MapPublicIpOnLaunch: True
       Tags:
@@ -120,8 +171,8 @@ Resources:
   PublicSubnet2:
     Type: AWS::EC2::Subnet
     Properties:
-      AvailabilityZone: eu-west-1b
-      CidrBlock: 10.0.20.0/24
+      AvailabilityZone: !Ref AvailabilityZoneB
+      CidrBlock: !Ref PublicSubnet2CIDR
       VpcId: !Ref myVPC
       MapPublicIpOnLaunch: True
       Tags:
@@ -135,6 +186,8 @@ Resources:
       Tags:
         - Key: Name
           Value: PublicSubnetRouteTable
+
+  #### Route table association ####
 
   PublicSubnet1RouteTableAssociation:
     Type: AWS::EC2::SubnetRouteTableAssociation
@@ -152,7 +205,7 @@ Resources:
     Type: AWS::EC2::Route
     Properties:
       DestinationCidrBlock: 0.0.0.0/0
-      GatewayId:  !Ref myInternetGateway
+      GatewayId:  !Ref InternetGateway
       RouteTableId: !Ref PublicSubnetRouteTable
       
   NATGatewayRouteTable:
@@ -197,13 +250,13 @@ Resources:
       NatGatewayId:  !Ref NATGateway
       RouteTableId: !Ref NATGatewayRouteTable
 
-  #### Private Subnet to place FrontEnd and BackEnd ####
+  #### Private Subnet creation ####
 
   PrivateSubnet1:
     Type: AWS::EC2::Subnet
     Properties:
-      AvailabilityZone: eu-west-1a
-      CidrBlock: 10.0.30.0/24
+      AvailabilityZone: !Ref AvailabilityZoneA
+      CidrBlock: !Ref PrivateSubnet1CIDR
       VpcId: !Ref myVPC
       Tags:
         - Key: Name
@@ -212,8 +265,8 @@ Resources:
   PrivateSubnet2:
     Type: AWS::EC2::Subnet
     Properties:
-      AvailabilityZone: eu-west-1b
-      CidrBlock: 10.0.40.0/24
+      AvailabilityZone: !Ref AvailabilityZoneB
+      CidrBlock: !Ref PrivateSubnet2CIDR
       VpcId: !Ref myVPC
       Tags:
         - Key: Name
@@ -222,8 +275,8 @@ Resources:
   PrivateSubnet3:
     Type: AWS::EC2::Subnet
     Properties:
-      AvailabilityZone: eu-west-1a
-      CidrBlock: 10.0.50.0/24
+      AvailabilityZone: !Ref AvailabilityZoneA
+      CidrBlock: !Ref PrivateSubnet3CIDR
       VpcId: !Ref myVPC
       Tags:
         - Key: Name
@@ -232,8 +285,8 @@ Resources:
   PrivateSubnet4:
     Type: AWS::EC2::Subnet
     Properties:
-      AvailabilityZone: eu-west-1b
-      CidrBlock: 10.0.60.0/24
+      AvailabilityZone: !Ref AvailabilityZoneB
+      CidrBlock: !Ref PrivateSubnet4CIDR
       VpcId: !Ref myVPC
       Tags:
         - Key: Name
@@ -258,39 +311,6 @@ Resources:
         - Key: Name
           Value: bastion-sg
 
-#  EC2BastionHost: 
-#    Type: AWS::EC2::Instance
-#    Properties: 
-#      ImageId: !Ref 'LatestAmiId'
-#      KeyName: !Ref 'KeyName'
-#      InstanceType: !Ref 'InstanceType'
-#      NetworkInterfaces: 
-#        - AssociatePublicIpAddress: "false"
-#          DeviceIndex: "0"
-#          GroupSet: 
-#            - Ref: "BastionSecurityGroup"
-#          SubnetId: 
-#            Ref: "PublicSubnet2"
-#      #UserData: !Base64 |
-#      #    #!/bin/bash
-#      #    amazon-linux-extras install epel -y
-#      #    yum install -y yum-utils device-mapper-persistent-data lvm2 ansible git python-devel python-pip vim-enhanced docker
-#      #    pip install docker docker-compose
-#      #    sleep 5
-#      #    systemctl start docker
-#      #    systemctl enable docker
-#      #    cd /tmp
-#      #    git clone https://github.com/ansible/awx.git
-#      #    sleep 5
-#      #    cd /tmp/awx
-#      #    git clone https://github.com/ansible/awx-logos.git
-#      #    sleep 5
-#      #    ansible-playbook -i /tmp/awx/installer/inventory /tmp/awx/installer/install.yml
-#      #    useradd -d /home/automation -s /bin/bash automation
-#      Tags:
-#        - Key: Name
-#          Value: Bastion
-
   BastionLaunchConfiguration:
     Type: AWS::AutoScaling::LaunchConfiguration
     Properties:
@@ -302,9 +322,11 @@ Resources:
         Fn::Base64:
           !Sub |
             #!/bin/bash
+            ## Script used to dynamically attach the EIP to the bastion instance during the boot process
             export AWS_ACCESS_KEY_ID=${AccessKeyId}
             export AWS_SECRET_ACCESS_KEY=${SecretAccessKey}
             export AWS_DEFAULT_REGION=${DefaultRegion}
+            ## Get the EIP not yet associated
             EIP=$(aws ec2 describe-addresses --output text | awk '{ if ( $3 !~ /eipassoc-*/ ) print $4 }')
             instance_id=$(curl -s http://169.254.169.254/latest/meta-data/instance-id)
             aws ec2 associate-address --instance-id $instance_id --public-ip $EIP
@@ -319,17 +341,17 @@ Resources:
         - Key: Name
           Value: EC2BastionHost
           PropagateAtLaunch: "true"
+    ## DependsOn NATGateway to be sure that the not associated EIP is the EIPBastionHost below
     DependsOn: NATGateway
 
   EIPBastionHost:
     Type: AWS::EC2::EIP
     Properties: 
       Domain: vpc
-      #InstanceId: !Ref 'BastionASG'
 
   #### LOADBALANCER SECTION ####
 
-  ### Target Group
+  ### Target Group ###
 
   myTargetGroup:
     Type: AWS::ElasticLoadBalancingV2::TargetGroup
@@ -341,7 +363,7 @@ Resources:
       TargetType: instance
       VpcId: !Ref myVPC
 
-  ### Load Balancer
+  ### Load Balancer ###
 
   myLoadBalancer:
     Type: AWS::ElasticLoadBalancingV2::LoadBalancer
@@ -415,7 +437,7 @@ Resources:
           PredefinedMetricType: ASGAverageCPUUtilization
         TargetValue: 30
 
-  ### Listener
+  ### Listener ###
 
   myListener:
     Type: AWS::ElasticLoadBalancingV2::Listener
