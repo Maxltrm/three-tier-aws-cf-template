@@ -4,7 +4,7 @@
 
 ### Bastion Host EIP allocation
 
-To have always the same EIP associated to the bastion host I wrote a userdata script to attach the EIPBastionHost to the instance during the instance boot up, if you terminate the instance or if a fault appen to an AZ, the istance can be started in the second AZ.
+To have always the same EIP associated to the bastion host I wrote a userdata script to attach the EIPBastionHost to the instance during the instance boot up, if you terminate the instance or if a fault happen to an AZ, the istance can be started in the second AZ.
 
 To be sure to select a free EIP this command is used at the moment:
 
@@ -56,6 +56,7 @@ To have CI/CD and CM use an on-premise AWS installation which use the bastion as
 #!/bin/bash
 yum install epel-release -y
 yum install -y yum-utils device-mapper-persistent-data lvm2 ansible git python-devel python-pip vim-enhanced docker
+pip install --upgrade pip
 pip install docker docker-compose
 sleep 5
 systemctl start docker
@@ -69,3 +70,27 @@ sleep 5
 ansible-playbook -i /tmp/awx/installer/inventory /tmp/awx/installer/install.yml
 useradd -d /home/automation -s /bin/bash automation
 ```
+
+When the installation is complete:
+
+1. login
+2. Create an Amazon Web Service type credential
+3. Create an Inventory using as source the previous created credential an insert in the source variables box the following directives to prevent the ec2.py dynamic inventory script to skip the instance in private VPC Subnet:
+
+```
+---
+destination_variable: private_dns_name
+vpc_destination_variable: private_ip_address
+```
+
+4. Insert in the variables box of the inventory the following directives to use a bastion host like a jump host:
+
+```
+---
+ansible_user: ec2-user
+ansible_connection: ssh
+ansible_ssh_common_args: '-o ProxyCommand="ssh -W %h:%p -q ec2-user@<bastion_host>.compute.amazonaws.com"'
+```
+
+Setting up a jump host to use with Tower
+https://docs.ansible.com/ansible-tower/latest/html/administration/tipsandtricks.html
