@@ -8,12 +8,15 @@ To have always the same EIP associated to the bastion host I wrote a userdata sc
 
 To be sure to select a free EIP this command is used at the moment:
 
+```
 aws ec2 describe-addresses --output text | awk '{ if ( $3 !~ /eipassoc-*/ ) print $4 } | head -1'
+```
 
 Pay attention to not forget other EIP not associated.
 
 To perform the EIP association an IAM user with the following policy is required:
 
+```
 {
     "Version": "2012-10-17",
     "Statement": [
@@ -39,6 +42,7 @@ To perform the EIP association an IAM user with the following policy is required
         }
     ]
 }
+```
 
 ### EC2 Instances initialization
 
@@ -48,6 +52,7 @@ pull code from s3 or github or artifactory
 
 To have CI/CD and CM use an on-premise AWS installation which use the bastion as a ssh proxy host and the AWS dynamic inventory to connect to the instances, to install AWS on Centos with docker, you can use this script:
 
+```
 #!/bin/bash
 yum install epel-release -y
 yum install -y yum-utils device-mapper-persistent-data lvm2 ansible git python-devel python-pip vim-enhanced docker
@@ -63,3 +68,4 @@ git clone https://github.com/ansible/awx-logos.git
 sleep 5
 ansible-playbook -i /tmp/awx/installer/inventory /tmp/awx/installer/install.yml
 useradd -d /home/automation -s /bin/bash automation
+```
