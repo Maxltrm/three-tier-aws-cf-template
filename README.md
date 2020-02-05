@@ -50,23 +50,11 @@ pull code from s3 or github or artifactory
 
 ### CI/CD and Configuration Management
 
-To have CI/CD and CM use an on-premise AWS installation which use the bastion as a ssh proxy host and the AWS dynamic inventory to connect to the instances, to install AWS on Centos with docker, you can use this script:
+To have CI/CD and CM use an on-prem ansible AWX which will use the bastion host as a ssh proxy host and the AWS dynamic inventory to connect to the instances:
 
 ```
-#!/bin/bash
-yum install epel-release -y
-yum install -y yum-utils device-mapper-persistent-data lvm2 ansible git python-devel python-pip vim-enhanced docker
-pip install --upgrade pip
-pip install docker docker-compose
-sleep 5
-systemctl start docker
-systemctl enable docker
 cd /tmp
 git clone https://github.com/ansible/awx.git
-sleep 5
-cd /tmp/awx
-git clone https://github.com/ansible/awx-logos.git
-sleep 5
 ansible-playbook -i /tmp/awx/installer/inventory /tmp/awx/installer/install.yml
 useradd -d /home/automation -s /bin/bash automation
 ```
@@ -75,7 +63,7 @@ When the installation is complete:
 
 1. login
 2. Create an Amazon Web Service type credential
-3. Create an Inventory using as source the previous created credential an insert in the source variables box the following directives to prevent the ec2.py dynamic inventory script to skip the instance in private VPC Subnet:
+3. Create an Inventory using as source the previous created credential and insert in the source variables box the following directives to prevent the ec2.py dynamic inventory script to skip the instance in private VPC Subnet:
 
 ```
 ---
